@@ -72,4 +72,8 @@ groweasy-assignment/
 - Batching keeps AI requests reliable for large files
 - Skip logic filters out leads with no way to contact them
 
+
 ## Position Applied For
+
+Software Developer - Intern 
+'@ | Out-File -FilePath README.md -Encoding utf8
