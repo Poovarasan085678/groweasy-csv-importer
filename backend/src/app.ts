@@ -33,15 +33,18 @@ app.post("/upload", upload.single("file"), async (req, res) => {
     }
 
     // Step 2: Split into batches of 25 rows
-    const batches = createBatches(rawRows, 25);
+    const batches = createBatches(rawRows, 15);
 
     // Step 3: Send each batch to AI, collect results
     let allRecords: CRMRecord[] = [];
 
-    for (const batch of batches) {
-      const extracted = await extractCRMRecords(batch);
-      allRecords = allRecords.concat(extracted);
-    }
+    for (let i = 0; i < batches.length; i++) {
+  const extracted = await extractCRMRecords(batches[i]);
+  allRecords = allRecords.concat(extracted);
+  if (i < batches.length - 1) {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+}
 
     // Step 4: Build response summary
     res.json({

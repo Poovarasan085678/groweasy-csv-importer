@@ -28,15 +28,30 @@ type UploadResponse = {
   records: CRMRecord[];
 };
 
+function getStatusStyle(status: string): string {
+  switch (status) {
+    case "GOOD_LEAD_FOLLOW_UP": return "bg-green-100 text-green-700";
+    case "SALE_DONE": return "bg-blue-100 text-blue-700";
+    case "DID_NOT_CONNECT": return "bg-gray-100 text-gray-600";
+    case "BAD_LEAD": return "bg-red-100 text-red-600";
+    default: return "bg-gray-50 text-gray-400";
+  }
+}
+
 export default function Home() {
   const [file, setFile] = useState<File | null>(null);
   const [previewRows, setPreviewRows] = useState<any[]>([]);
   const [previewHeaders, setPreviewHeaders] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState("AI is processing your leads...");
   const [result, setResult] = useState<UploadResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   function handleFileSelect(selectedFile: File) {
+    if (!selectedFile.name.endsWith(".csv")) {
+      setError("Please upload a valid .csv file.");
+      return;
+    }
     setFile(selectedFile);
     setResult(null);
     setError(null);
@@ -57,10 +72,8 @@ export default function Home() {
   function handleDrop(e: React.DragEvent<HTMLDivElement>) {
     e.preventDefault();
     const droppedFile = e.dataTransfer.files[0];
-    if (droppedFile && droppedFile.type === "text/csv") {
+    if (droppedFile) {
       handleFileSelect(droppedFile);
-    } else {
-      setError("Please upload a valid CSV file.");
     }
   }
 
@@ -75,15 +88,26 @@ export default function Home() {
     if (!file) return;
     setLoading(true);
     setError(null);
+    setLoadingMessage("Uploading file...");
+
+    const messageTimer = setTimeout(() => {
+      setLoadingMessage("AI is mapping your leads, this may take a minute for large files...");
+    }, 3000);
 
     try {
       const formData = new FormData();
       formData.append("file", file);
 
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 180000);
+
       const res = await fetch("https://groweasy-csv-importer-ukip.onrender.com/upload", {
         method: "POST",
         body: formData,
+        signal: controller.signal,
       });
+
+      clearTimeout(timeoutId);
 
       if (!res.ok) {
         const errData = await res.json();
@@ -93,8 +117,13 @@ export default function Home() {
       const data: UploadResponse = await res.json();
       setResult(data);
     } catch (err: any) {
-      setError(err.message || "Something went wrong");
+      if (err.name === "AbortError") {
+        setError("Request timed out. The server may be waking up — please try again in 30 seconds.");
+      } else {
+        setError(err.message || "Something went wrong");
+      }
     } finally {
+      clearTimeout(messageTimer);
       setLoading(false);
     }
   }
@@ -102,9 +131,12 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-gray-50 p-8">
       <div className="max-w-6xl mx-auto">
-        <h1 className="text-3xl font-bold mb-6 text-gray-900">
+        <h1 className="text-3xl font-bold mb-2 text-gray-900">
           GrowEasy CRM CSV Importer
         </h1>
+        <p className="text-gray-500 mb-6">
+          Upload any CSV — AI will intelligently map it to GrowEasy CRM format
+        </p>
 
         {!file && (
           <div
@@ -128,6 +160,9 @@ export default function Home() {
             >
               Choose File
             </label>
+            <p className="text-xs text-gray-400 mt-3">
+              Supports any CSV format — Facebook Ads, Google Ads, Excel exports, and more
+            </p>
           </div>
         )}
 
@@ -140,14 +175,20 @@ export default function Home() {
         {file && previewRows.length > 0 && !result && (
           <div className="mt-6">
             <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-semibold text-gray-800">
-                Preview: {file.name} ({previewRows.length} rows)
-              </h2>
+              <div>
+                <h2 className="text-xl font-semibold text-gray-800">
+                  Preview: {file.name}
+                </h2>
+                <p className="text-sm text-gray-500">
+                  {previewRows.length} rows · {(file.size / 1024).toFixed(1)} KB
+                </p>
+              </div>
               <div className="flex gap-3">
                 <button
                   onClick={() => {
                     setFile(null);
                     setPreviewRows([]);
+                    setError(null);
                   }}
                   className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100"
                 >
@@ -197,8 +238,8 @@ export default function Home() {
         )}
 
         {loading && (
-          <div className="mt-6 text-center text-gray-600">
-            AI is processing your leads, please wait...
+          <div className="mt-6 p-4 bg-blue-50 border border-blue-100 rounded-lg text-center text-blue-700">
+            <div className="animate-pulse">{loadingMessage}</div>
           </div>
         )}
 
@@ -220,7 +261,9 @@ export default function Home() {
             </div>
 
             <div className="flex justify-between items-center mb-3">
-              <h2 className="text-xl font-semibold text-gray-800">Imported Records</h2>
+              <h2 className="text-xl font-semibold text-gray-800">
+                Imported Records
+              </h2>
               <button
                 onClick={() => {
                   setFile(null);
@@ -250,12 +293,18 @@ export default function Home() {
                 <tbody>
                   {result.records.map((record, i) => (
                     <tr key={i} className="border-b hover:bg-gray-50">
-                      {Object.values(record).map((value, j) => (
+                      {Object.entries(record).map(([key, value], j) => (
                         <td
                           key={j}
                           className="px-4 py-2 text-gray-600 whitespace-nowrap"
                         >
-                          {String(value)}
+                          {key === "crm_status" && value ? (
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusStyle(String(value))}`}>
+                              {String(value)}
+                            </span>
+                          ) : (
+                            String(value)
+                          )}
                         </td>
                       ))}
                     </tr>
