@@ -80,7 +80,7 @@ export default function Home() {
       const formData = new FormData();
       formData.append("file", file);
 
-      const res = await fetch("http://localhost:4000/upload", {
+      const res = await fetch("https://groweasy-csv-importer-ukip.onrender.com/upload", {
         method: "POST",
         body: formData,
       });
